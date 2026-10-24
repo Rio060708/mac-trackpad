@@ -12,19 +12,43 @@ jobs:
       - name: Checkout Source
         uses: actions/checkout@v4
 
-      - name: Auto-Fix Folder Structure & Multi-Line Strings
+      - name: Fix HID Unregistered & Multi-Line Strings
         run: |
           if [ -d "MacTrackpad" ] && [ ! -f "settings.gradle.kts" ] && [ ! -f "settings.gradle" ]; then
             cp -rn MacTrackpad/* .
           fi
           python3 - << 'EOF'
           import pathlib, re
+
+          # 1. Fix multi-line strings & prevent onDestroy() from unregistering HID on rotation
           for kt in pathlib.Path(".").rglob("*.kt"):
               txt = kt.read_text(encoding="utf-8")
-              fixed = re.sub(r'"([^"]*)\n" \+', r'"\1\\n" +', txt)
-              if fixed != txt:
-                  kt.write_text(fixed, encoding="utf-8")
-                  print(f"Fixed multi-line strings in {kt}")
+              txt = re.sub(r'"([^"]*)\n" \+', r'"\1\\n" +', txt)
+              if kt.name == "MainActivity.kt":
+                  txt = txt.replace("hidController.stop()", "// Keep HID alive across orientation changes")
+                  txt = txt.replace(
+                      "setOnClickListener { showDevicePickerDialog() }",
+                      "setOnClickListener { hidController.start(); showDevicePickerDialog() }"
+                  )
+              if kt.name == "BluetoothHidController.kt":
+                  txt = txt.replace(
+                      "hidDevice?.registerApp(sdpSettings, null, qosOut, executor, hidCallback)",
+                      "hidDevice?.registerApp(sdpSettings, null, null, executor, hidCallback)"
+                  )
+                  txt = txt.replace(
+                      'notifyStatus("HID Unregistered", null)',
+                      'notifyStatus("Re-registering HID... (Tap pill to connect)", null)\n                mainHandler.postDelayed({ hidDevice?.registerApp(sdpSettings, null, null, executor, hidCallback) }, 600L)'
+                  )
+              kt.write_text(txt, encoding="utf-8")
+
+          # 2. Prevent Activity recreation on landscape rotation in AndroidManifest.xml
+          for mf in pathlib.Path(".").rglob("AndroidManifest.xml"):
+              mtxt = mf.read_text(encoding="utf-8")
+              mtxt = mtxt.replace(
+                  'android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"',
+                  'android:launchMode="singleTask" android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|uiMode|density|keyboard|keyboardHidden|navigation"'
+              )
+              mf.write_text(mtxt, encoding="utf-8")
           EOF
 
       - name: Set up JDK 17
