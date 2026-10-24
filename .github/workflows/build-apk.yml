@@ -20,7 +20,6 @@ jobs:
           python3 - << 'EOF'
           import pathlib, re
 
-          # 1. Fix multi-line strings & prevent onDestroy() from unregistering HID on rotation
           for kt in pathlib.Path(".").rglob("*.kt"):
               txt = kt.read_text(encoding="utf-8")
               txt = re.sub(r'"([^"]*)\n" \+', r'"\1\\n" +', txt)
@@ -37,11 +36,10 @@ jobs:
                   )
                   txt = txt.replace(
                       'notifyStatus("HID Unregistered", null)',
-                      'notifyStatus("Re-registering HID... (Tap pill to connect)", null)\n                mainHandler.postDelayed({ hidDevice?.registerApp(sdpSettings, null, null, executor, hidCallback) }, 600L)'
+                      'val cb = this\n                notifyStatus("Re-registering HID... (Tap pill to connect)", null)\n                mainHandler.postDelayed({ hidDevice?.registerApp(sdpSettings, null, null, executor, cb) }, 600L)'
                   )
               kt.write_text(txt, encoding="utf-8")
 
-          # 2. Prevent Activity recreation on landscape rotation in AndroidManifest.xml
           for mf in pathlib.Path(".").rglob("AndroidManifest.xml"):
               mtxt = mf.read_text(encoding="utf-8")
               mtxt = mtxt.replace(
